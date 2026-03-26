@@ -52,12 +52,8 @@ export default function App() {
       if (mode === "live") {
         const data = await fetchLiveLenses(params);
         setResults(data.results);
-        setTotal(data.total);
-        setLiveInfo({
-          cachedAt: data.cachedAt,
-          cacheAgeSeconds: data.cacheAgeSeconds,
-          fetched: data.fetched,
-        });
+        setTotal(data.filtered ?? data.total);
+        setLiveInfo({ sources: data.sources });
       } else {
         const data = await fetchLenses(params);
         setResults(data.results);

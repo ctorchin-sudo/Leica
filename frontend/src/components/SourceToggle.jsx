@@ -1,8 +1,12 @@
+function formatAge(seconds) {
+  if (seconds === null || seconds === undefined) return "";
+  if (seconds < 60) return `${seconds}s ago`;
+  return `${Math.round(seconds / 60)}m ago`;
+}
+
 export default function SourceToggle({ mode, onChange, liveInfo }) {
-  const formatAge = (seconds) => {
-    if (seconds < 60) return `${seconds}s ago`;
-    return `${Math.round(seconds / 60)}m ago`;
-  };
+  const mpb = liveInfo?.sources?.mpb;
+  const ebay = liveInfo?.sources?.ebay;
 
   return (
     <div className="source-toggle">
@@ -17,17 +21,28 @@ export default function SourceToggle({ mode, onChange, liveInfo }) {
         <button
           className={`toggle-btn ${mode === "live" ? "active" : ""}`}
           onClick={() => onChange("live")}
-          title="Live listings scraped from MPB.com"
+          title="Live listings scraped from MPB and eBay"
         >
-          Live — MPB
+          Live
         </button>
       </div>
+
       {mode === "live" && liveInfo && (
         <div className="live-status">
           <span className="live-dot" />
-          <span>
-            {liveInfo.fetched} listings
-            {liveInfo.cachedAt && ` · cached ${formatAge(liveInfo.cacheAgeSeconds)}`}
+          <span className="live-sources">
+            {mpb && (
+              <span className="live-source-tag">
+                MPB {mpb.items}
+                {mpb.cachedAt && <em> · {formatAge(mpb.cacheAgeSeconds)}</em>}
+              </span>
+            )}
+            {ebay && (
+              <span className="live-source-tag">
+                eBay {ebay.items}
+                {ebay.cachedAt && <em> · {formatAge(ebay.cacheAgeSeconds)}</em>}
+              </span>
+            )}
           </span>
         </div>
       )}

@@ -73,6 +73,25 @@ body {
   color: #666;
 }
 
+.live-sources {
+  display: flex;
+  gap: 8px;
+}
+
+.live-source-tag {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: #888;
+}
+
+.live-source-tag em {
+  font-style: normal;
+  color: #555;
+}
+
 .live-dot {
   width: 7px;
   height: 7px;

@@ -1,7 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 const LENSES = require("./data/lenses");
-const { scrapeMPB, closeBrowser } = require("./scrapers/mpb");
+const { scrapeMPB, closeBrowser: closeMPB } = require("./scrapers/mpb");
+const { scrapeEbay, closeBrowser: closeEbay } = require("./scrapers/ebay");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -9,7 +10,7 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// ─── Shared filter/sort logic ────────────────────────────────────────────────
+// ─── Shared filter/sort logic ─────────────────────────────────────────────────
 
 function applyFilters(results, query) {
   const { q, brand, focalLength, maxAperture, condition, minPrice, maxPrice } =
@@ -53,27 +54,27 @@ function applyFilters(results, query) {
 }
 
 function applySort(results, sortBy = "price_asc") {
+  const copy = [...results];
   switch (sortBy) {
     case "price_asc":
-      return [...results].sort((a, b) => a.price - b.price);
+      return copy.sort((a, b) => a.price - b.price);
     case "price_desc":
-      return [...results].sort((a, b) => b.price - a.price);
+      return copy.sort((a, b) => b.price - a.price);
     case "focal_asc":
-      return [...results].sort(
+      return copy.sort(
         (a, b) => (a.focalLength ?? 999) - (b.focalLength ?? 999)
       );
     case "aperture_fast":
-      return [...results].sort(
+      return copy.sort(
         (a, b) => (a.maxAperture ?? 99) - (b.maxAperture ?? 99)
       );
     default:
-      return results;
+      return copy;
   }
 }
 
-// ─── Static lens database endpoints ─────────────────────────────────────────
+// ─── Static database endpoints ────────────────────────────────────────────────
 
-// GET /api/lenses - search and filter the static seed database
 app.get("/api/lenses", (req, res) => {
   const { sortBy = "price_asc" } = req.query;
   let results = applyFilters([...LENSES], req.query);
@@ -81,7 +82,6 @@ app.get("/api/lenses", (req, res) => {
   res.json({ total: results.length, results, source: "static" });
 });
 
-// GET /api/lenses/filters - available filter options from static data
 app.get("/api/lenses/filters", (req, res) => {
   const brands = [...new Set(LENSES.map((l) => l.brand))].sort();
   const focalLengths = [...new Set(LENSES.map((l) => l.focalLength))].sort(
@@ -95,101 +95,125 @@ app.get("/api/lenses/filters", (req, res) => {
   res.json({ brands, focalLengths, conditions, priceRange });
 });
 
-// ─── Live scrape endpoint ────────────────────────────────────────────────────
+// ─── Live scrape cache ────────────────────────────────────────────────────────
 
-// Simple in-memory cache — refreshes every 10 minutes
 const CACHE_TTL_MS = 10 * 60 * 1000;
-let scrapeCache = null;
-let cacheTimestamp = 0;
-let scrapeInProgress = false;
 
-async function refreshCache() {
-  if (scrapeInProgress) return;
-  scrapeInProgress = true;
+const cache = {
+  mpb: { data: null, ts: 0 },
+  ebay: { data: null, ts: 0 },
+};
+const inProgress = { mpb: false, ebay: false };
+
+async function refreshSource(source) {
+  if (inProgress[source]) return;
+  inProgress[source] = true;
   try {
-    console.log("[scraper] Starting MPB scrape...");
-    const result = await scrapeMPB({ rows: 48 });
-    scrapeCache = result;
-    cacheTimestamp = Date.now();
-    console.log(`[scraper] Done — ${result.total} total, ${result.items.length} fetched`);
+    console.log(`[scraper] Starting ${source} scrape...`);
+    const result =
+      source === "mpb" ? await scrapeMPB() : await scrapeEbay();
+    cache[source] = { data: result, ts: Date.now() };
+    const count =
+      source === "mpb" ? result.items.length : result.items.length;
+    console.log(`[scraper] ${source} done — ${count} items`);
   } catch (err) {
-    console.error("[scraper] Failed:", err.message);
+    console.error(`[scraper] ${source} failed:`, err.message);
   } finally {
-    scrapeInProgress = false;
+    inProgress[source] = false;
   }
 }
 
-// GET /api/scrape - live listings from MPB via Playwright scraper
+function isFresh(source) {
+  return cache[source].data && Date.now() - cache[source].ts < CACHE_TTL_MS;
+}
+
+// ─── /api/scrape ─────────────────────────────────────────────────────────────
+
+// GET /api/scrape?sources=mpb,ebay&sortBy=price_asc&...
 app.get("/api/scrape", async (req, res) => {
-  const { sortBy = "price_asc", refresh } = req.query;
+  const { sortBy = "price_asc", refresh, sources = "mpb,ebay" } = req.query;
+  const requestedSources = sources.split(",").map((s) => s.trim().toLowerCase());
+  const forceRefresh = refresh === "1";
 
-  // Serve from cache if fresh, unless ?refresh=1
-  const cacheAge = Date.now() - cacheTimestamp;
-  if (scrapeCache && cacheAge < CACHE_TTL_MS && refresh !== "1") {
-    let items = applyFilters([...scrapeCache.items], req.query);
-    items = applySort(items, sortBy);
-    return res.json({
-      total: scrapeCache.total,
-      fetched: scrapeCache.items.length,
-      results: items,
-      source: "mpb-live",
-      cachedAt: new Date(cacheTimestamp).toISOString(),
-      cacheAgeSeconds: Math.round(cacheAge / 1000),
+  // Refresh stale sources (in parallel)
+  const toRefresh = requestedSources.filter(
+    (s) => (forceRefresh || !isFresh(s)) && (s === "mpb" || s === "ebay")
+  );
+  if (toRefresh.length) {
+    await Promise.all(toRefresh.map(refreshSource));
+  }
+
+  // Merge results from all requested sources
+  let allItems = [];
+  const sourceMeta = {};
+
+  for (const source of requestedSources) {
+    const entry = cache[source];
+    if (!entry.data) continue;
+    allItems = allItems.concat(entry.data.items);
+    sourceMeta[source] = {
+      count: entry.data.items.length,
+      total: entry.data.total ?? entry.data.items.length,
+      cachedAt: new Date(entry.ts).toISOString(),
+      cacheAgeSeconds: Math.round((Date.now() - entry.ts) / 1000),
+    };
+  }
+
+  if (!allItems.length) {
+    return res.status(503).json({
+      error: "No data available — scrape may have failed. Check server logs.",
     });
   }
 
-  // Trigger fresh scrape (non-blocking — stream back when ready)
-  try {
-    await refreshCache();
-    if (!scrapeCache) {
-      return res
-        .status(503)
-        .json({ error: "Scrape failed — see server logs." });
-    }
-    let items = applyFilters([...scrapeCache.items], req.query);
-    items = applySort(items, sortBy);
-    return res.json({
-      total: scrapeCache.total,
-      fetched: scrapeCache.items.length,
-      results: items,
-      source: "mpb-live",
-      cachedAt: new Date(cacheTimestamp).toISOString(),
-      cacheAgeSeconds: 0,
-    });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
-});
+  let results = applyFilters(allItems, req.query);
+  results = applySort(results, sortBy);
 
-// GET /api/scrape/status - cache status
-app.get("/api/scrape/status", (req, res) => {
   res.json({
-    cached: scrapeCache !== null,
-    inProgress: scrapeInProgress,
-    total: scrapeCache?.total ?? 0,
-    fetched: scrapeCache?.items?.length ?? 0,
-    availableBrands: scrapeCache?.availableBrands ?? [],
-    cachedAt: cacheTimestamp
-      ? new Date(cacheTimestamp).toISOString()
-      : null,
-    cacheAgeSeconds: cacheTimestamp
-      ? Math.round((Date.now() - cacheTimestamp) / 1000)
-      : null,
+    total: allItems.length,
+    filtered: results.length,
+    results,
+    sources: sourceMeta,
   });
 });
 
-// ─── Start ───────────────────────────────────────────────────────────────────
+// GET /api/scrape/status
+app.get("/api/scrape/status", (req, res) => {
+  res.json({
+    sources: {
+      mpb: {
+        cached: isFresh("mpb"),
+        inProgress: inProgress.mpb,
+        items: cache.mpb.data?.items?.length ?? 0,
+        total: cache.mpb.data?.total ?? 0,
+        availableBrands: cache.mpb.data?.availableBrands ?? [],
+        cachedAt: cache.mpb.ts ? new Date(cache.mpb.ts).toISOString() : null,
+        cacheAgeSeconds: cache.mpb.ts
+          ? Math.round((Date.now() - cache.mpb.ts) / 1000)
+          : null,
+      },
+      ebay: {
+        cached: isFresh("ebay"),
+        inProgress: inProgress.ebay,
+        items: cache.ebay.data?.items?.length ?? 0,
+        cachedAt: cache.ebay.ts ? new Date(cache.ebay.ts).toISOString() : null,
+        cacheAgeSeconds: cache.ebay.ts
+          ? Math.round((Date.now() - cache.ebay.ts) / 1000)
+          : null,
+      },
+    },
+  });
+});
+
+// ─── Start ────────────────────────────────────────────────────────────────────
 
 const server = app.listen(PORT, () => {
   console.log(`Leica lens search backend running on http://localhost:${PORT}`);
 });
 
-process.on("SIGTERM", async () => {
-  await closeBrowser();
+async function shutdown() {
+  await Promise.all([closeMPB(), closeEbay()]);
   server.close();
-});
-process.on("SIGINT", async () => {
-  await closeBrowser();
-  server.close();
-  process.exit(0);
-});
+}
+
+process.on("SIGTERM", () => shutdown());
+process.on("SIGINT", () => shutdown().then(() => process.exit(0)));
