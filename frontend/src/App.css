@@ -1,0 +1,458 @@
+/* ─── Reset & base ─────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #0f0f0f;
+  color: #e2e2e2;
+  min-height: 100vh;
+}
+
+/* ─── Layout ────────────────────────────────────────────────── */
+.app { display: flex; flex-direction: column; min-height: 100vh; }
+
+.app-header {
+  background: #111;
+  border-bottom: 1px solid #222;
+  padding: 20px 24px;
+}
+
+.header-inner {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.logo-mark {
+  width: 42px;
+  height: 42px;
+  background: #d00;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 18px;
+  color: #fff;
+  letter-spacing: -1px;
+  flex-shrink: 0;
+}
+
+.logo h1 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.3px;
+}
+
+.subtitle {
+  font-size: 13px;
+  color: #666;
+  margin-top: 2px;
+}
+
+.app-main {
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 24px;
+  flex: 1;
+}
+
+/* ─── Search bar ────────────────────────────────────────────── */
+.search-bar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.search-input-wrapper {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  width: 18px;
+  height: 18px;
+  color: #555;
+  pointer-events: none;
+}
+
+.search-input {
+  width: 100%;
+  padding: 10px 40px 10px 40px;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  color: #e2e2e2;
+  font-size: 15px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.search-input:focus { border-color: #c00; }
+.search-input::placeholder { color: #444; }
+
+.clear-btn {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  color: #555;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+.clear-btn:hover { color: #aaa; }
+
+.search-btn {
+  padding: 10px 22px;
+  background: #c00;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.search-btn:hover { background: #e00; }
+
+/* ─── Content layout ────────────────────────────────────────── */
+.content-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .content-layout { grid-template-columns: 1fr; }
+  .app-main { padding: 16px; }
+}
+
+/* ─── Filter panel ──────────────────────────────────────────── */
+.filter-panel {
+  background: #1a1a1a;
+  border: 1px solid #222;
+  border-radius: 10px;
+  padding: 16px;
+  position: sticky;
+  top: 20px;
+}
+
+.filter-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.filter-panel-header h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.clear-filters-btn {
+  background: none;
+  border: none;
+  color: #c00;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.clear-filters-btn:hover { color: #e44; }
+
+.filter-group {
+  margin-bottom: 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #222;
+}
+.filter-group:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
+.filter-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.filter-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.filter-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #bbb;
+  transition: color 0.1s;
+}
+.filter-label:hover { color: #fff; }
+.filter-label input[type="checkbox"] { accent-color: #c00; }
+
+.filter-select {
+  width: 100%;
+  padding: 7px 10px;
+  background: #111;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  color: #ccc;
+  font-size: 13px;
+  outline: none;
+}
+.filter-select:focus { border-color: #c00; }
+
+.price-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.price-input {
+  flex: 1;
+  padding: 7px 8px;
+  background: #111;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  color: #ccc;
+  font-size: 13px;
+  outline: none;
+  min-width: 0;
+}
+.price-input:focus { border-color: #c00; }
+.price-input::placeholder { color: #444; font-size: 11px; }
+
+.price-separator { color: #555; font-size: 14px; }
+
+/* ─── Sort bar ──────────────────────────────────────────────── */
+.sort-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #222;
+}
+
+.result-count {
+  font-size: 13px;
+  color: #666;
+}
+
+.sort-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sort-label {
+  font-size: 13px;
+  color: #666;
+}
+
+.sort-select {
+  padding: 6px 10px;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  color: #ccc;
+  font-size: 13px;
+  outline: none;
+}
+.sort-select:focus { border-color: #c00; }
+
+/* ─── Lens grid ─────────────────────────────────────────────── */
+.lens-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+/* ─── Lens card ─────────────────────────────────────────────── */
+.lens-card {
+  background: #1a1a1a;
+  border: 1px solid #222;
+  border-radius: 10px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+.lens-card:hover {
+  border-color: #333;
+  transform: translateY(-2px);
+}
+
+.lens-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.lens-brand {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #888;
+}
+
+.condition-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.lens-model {
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.3;
+}
+
+.lens-specs {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.spec {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #999;
+}
+
+.spec-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.spec-label {
+  color: #666;
+}
+
+.lens-description {
+  font-size: 12px;
+  color: #888;
+  line-height: 1.5;
+  flex: 1;
+}
+
+.lens-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid #222;
+}
+
+.price {
+  font-size: 20px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.5px;
+}
+
+.source-link {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #c00;
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.1s;
+}
+.source-link:hover { color: #e44; }
+
+.external-icon {
+  width: 12px;
+  height: 12px;
+}
+
+/* ─── Skeleton loading ──────────────────────────────────────── */
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.skeleton-line {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #222 25%, #2a2a2a 50%, #222 75%);
+  background-size: 400px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+.skeleton-line.short { width: 40%; }
+.skeleton-line.medium { width: 65%; }
+.skeleton-line.long { width: 90%; }
+
+.skeleton .lens-model { height: 18px; border-radius: 6px; background: #222; }
+.skeleton .lens-card-footer { border-top: 1px solid #1f1f1f; }
+.skeleton-footer {
+  display: flex;
+  justify-content: space-between;
+}
+
+/* ─── Empty/error states ────────────────────────────────────── */
+.empty-state, .error-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: #555;
+}
+
+.empty-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 16px;
+  color: #333;
+}
+
+.empty-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.empty-state h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #666;
+  margin-bottom: 6px;
+}
+
+.empty-state p, .error-state p {
+  font-size: 13px;
+  color: #c00;
+}

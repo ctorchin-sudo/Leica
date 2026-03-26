@@ -1,0 +1,12 @@
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0;
+  background: #0f0f0f;
+  color: #e2e2e2;
+}
+
+#root {
+  min-height: 100vh;
+}
