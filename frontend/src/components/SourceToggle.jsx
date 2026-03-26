@@ -7,6 +7,7 @@ function formatAge(seconds) {
 export default function SourceToggle({ mode, onChange, liveInfo }) {
   const mpb = liveInfo?.sources?.mpb;
   const ebay = liveInfo?.sources?.ebay;
+  const keh = liveInfo?.sources?.keh;
 
   return (
     <div className="source-toggle">
@@ -21,7 +22,7 @@ export default function SourceToggle({ mode, onChange, liveInfo }) {
         <button
           className={`toggle-btn ${mode === "live" ? "active" : ""}`}
           onClick={() => onChange("live")}
-          title="Live listings scraped from MPB and eBay"
+          title="Live listings scraped from MPB, eBay and KEH"
         >
           Live
         </button>
@@ -41,6 +42,12 @@ export default function SourceToggle({ mode, onChange, liveInfo }) {
               <span className="live-source-tag">
                 eBay {ebay.items}
                 {ebay.cachedAt && <em> · {formatAge(ebay.cacheAgeSeconds)}</em>}
+              </span>
+            )}
+            {keh && (
+              <span className="live-source-tag">
+                KEH {keh.items}
+                {keh.cachedAt && <em> · {formatAge(keh.cacheAgeSeconds)}</em>}
               </span>
             )}
           </span>

@@ -3,6 +3,7 @@ const cors = require("cors");
 const LENSES = require("./data/lenses");
 const { scrapeMPB, closeBrowser: closeMPB } = require("./scrapers/mpb");
 const { scrapeEbay, closeBrowser: closeEbay } = require("./scrapers/ebay");
+const { scrapeKEH, closeBrowser: closeKEH } = require("./scrapers/keh");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -102,8 +103,9 @@ const CACHE_TTL_MS = 10 * 60 * 1000;
 const cache = {
   mpb: { data: null, ts: 0 },
   ebay: { data: null, ts: 0 },
+  keh: { data: null, ts: 0 },
 };
-const inProgress = { mpb: false, ebay: false };
+const inProgress = { mpb: false, ebay: false, keh: false };
 
 async function refreshSource(source) {
   if (inProgress[source]) return;
@@ -111,7 +113,11 @@ async function refreshSource(source) {
   try {
     console.log(`[scraper] Starting ${source} scrape...`);
     const result =
-      source === "mpb" ? await scrapeMPB() : await scrapeEbay();
+      source === "mpb"
+        ? await scrapeMPB()
+        : source === "keh"
+        ? await scrapeKEH()
+        : await scrapeEbay();
     cache[source] = { data: result, ts: Date.now() };
     const count =
       source === "mpb" ? result.items.length : result.items.length;
@@ -131,13 +137,15 @@ function isFresh(source) {
 
 // GET /api/scrape?sources=mpb,ebay&sortBy=price_asc&...
 app.get("/api/scrape", async (req, res) => {
-  const { sortBy = "price_asc", refresh, sources = "mpb,ebay" } = req.query;
+  const { sortBy = "price_asc", refresh, sources = "mpb,ebay,keh" } = req.query;
   const requestedSources = sources.split(",").map((s) => s.trim().toLowerCase());
   const forceRefresh = refresh === "1";
 
   // Refresh stale sources (in parallel)
   const toRefresh = requestedSources.filter(
-    (s) => (forceRefresh || !isFresh(s)) && (s === "mpb" || s === "ebay")
+    (s) =>
+      (forceRefresh || !isFresh(s)) &&
+      (s === "mpb" || s === "ebay" || s === "keh")
   );
   if (toRefresh.length) {
     await Promise.all(toRefresh.map(refreshSource));
@@ -152,7 +160,7 @@ app.get("/api/scrape", async (req, res) => {
     if (!entry.data) continue;
     allItems = allItems.concat(entry.data.items);
     sourceMeta[source] = {
-      count: entry.data.items.length,
+      items: entry.data.items.length,
       total: entry.data.total ?? entry.data.items.length,
       cachedAt: new Date(entry.ts).toISOString(),
       cacheAgeSeconds: Math.round((Date.now() - entry.ts) / 1000),
@@ -200,6 +208,16 @@ app.get("/api/scrape/status", (req, res) => {
           ? Math.round((Date.now() - cache.ebay.ts) / 1000)
           : null,
       },
+      keh: {
+        cached: isFresh("keh"),
+        inProgress: inProgress.keh,
+        items: cache.keh.data?.items?.length ?? 0,
+        total: cache.keh.data?.total ?? 0,
+        cachedAt: cache.keh.ts ? new Date(cache.keh.ts).toISOString() : null,
+        cacheAgeSeconds: cache.keh.ts
+          ? Math.round((Date.now() - cache.keh.ts) / 1000)
+          : null,
+      },
     },
   });
 });
@@ -211,7 +229,7 @@ const server = app.listen(PORT, () => {
 });
 
 async function shutdown() {
-  await Promise.all([closeMPB(), closeEbay()]);
+  await Promise.all([closeMPB(), closeEbay(), closeKEH()]);
   server.close();
 }
 
