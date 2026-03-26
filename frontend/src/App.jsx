@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
-import { fetchLenses, fetchFilters } from "./api";
+import { fetchLenses, fetchFilters, fetchLiveLenses } from "./api";
 import SearchBar from "./components/SearchBar";
 import FilterPanel from "./components/FilterPanel";
 import LensGrid from "./components/LensGrid";
 import SortBar from "./components/SortBar";
+import SourceToggle from "./components/SourceToggle";
 import "./App.css";
 
 export default function App() {
@@ -22,37 +23,57 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [filterOptions, setFilterOptions] = useState(null);
+  const [mode, setMode] = useState("static"); // "static" | "live"
+  const [liveInfo, setLiveInfo] = useState(null); // { cachedAt, cacheAgeSeconds, fetched }
 
   useEffect(() => {
     fetchFilters().then(setFilterOptions).catch(console.error);
   }, []);
 
+  const buildParams = useCallback(() => {
+    const params = { sortBy };
+    if (query) params.q = query;
+    if (filters.brands.length) params.brand = filters.brands.join(",");
+    if (filters.focalLengths.length)
+      params.focalLength = filters.focalLengths.join(",");
+    if (filters.conditions.length)
+      params.condition = filters.conditions.join(",");
+    if (filters.minPrice) params.minPrice = filters.minPrice;
+    if (filters.maxPrice) params.maxPrice = filters.maxPrice;
+    if (filters.maxAperture) params.maxAperture = filters.maxAperture;
+    return params;
+  }, [query, filters, sortBy]);
+
   const search = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const params = { sortBy };
-      if (query) params.q = query;
-      if (filters.brands.length) params.brand = filters.brands.join(",");
-      if (filters.focalLengths.length)
-        params.focalLength = filters.focalLengths.join(",");
-      if (filters.conditions.length)
-        params.condition = filters.conditions.join(",");
-      if (filters.minPrice) params.minPrice = filters.minPrice;
-      if (filters.maxPrice) params.maxPrice = filters.maxPrice;
-      if (filters.maxAperture) params.maxAperture = filters.maxAperture;
-
-      const data = await fetchLenses(params);
-      setResults(data.results);
-      setTotal(data.total);
+      const params = buildParams();
+      if (mode === "live") {
+        const data = await fetchLiveLenses(params);
+        setResults(data.results);
+        setTotal(data.total);
+        setLiveInfo({
+          cachedAt: data.cachedAt,
+          cacheAgeSeconds: data.cacheAgeSeconds,
+          fetched: data.fetched,
+        });
+      } else {
+        const data = await fetchLenses(params);
+        setResults(data.results);
+        setTotal(data.total);
+        setLiveInfo(null);
+      }
     } catch {
       setError(
-        "Could not connect to the search server. Is the backend running on port 3001?"
+        mode === "live"
+          ? "Could not fetch live listings — make sure the backend is running and Chromium is installed."
+          : "Could not connect to the search server. Is the backend running on port 3001?"
       );
     } finally {
       setLoading(false);
     }
-  }, [query, filters, sortBy]);
+  }, [buildParams, mode]);
 
   useEffect(() => {
     search();
@@ -71,6 +92,7 @@ export default function App() {
               </p>
             </div>
           </div>
+          <SourceToggle mode={mode} onChange={setMode} liveInfo={liveInfo} />
         </div>
       </header>
 

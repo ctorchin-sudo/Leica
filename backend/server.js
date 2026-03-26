@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const LENSES = require("./data/lenses");
+const { scrapeMPB, closeBrowser } = require("./scrapers/mpb");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -8,110 +9,187 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// GET /api/lenses - search and filter lenses
-app.get("/api/lenses", (req, res) => {
-  const {
-    q,
-    brand,
-    focalLength,
-    maxAperture,
-    condition,
-    minPrice,
-    maxPrice,
-    sortBy = "price_asc",
-  } = req.query;
+// ─── Shared filter/sort logic ────────────────────────────────────────────────
 
-  let results = [...LENSES];
+function applyFilters(results, query) {
+  const { q, brand, focalLength, maxAperture, condition, minPrice, maxPrice } =
+    query;
 
-  // Full-text search across model, brand, description
   if (q) {
-    const query = q.toLowerCase();
+    const text = q.toLowerCase();
     results = results.filter(
       (l) =>
-        l.brand.toLowerCase().includes(query) ||
-        l.model.toLowerCase().includes(query) ||
-        l.description.toLowerCase().includes(query)
+        l.brand.toLowerCase().includes(text) ||
+        l.model.toLowerCase().includes(text) ||
+        (l.description || "").toLowerCase().includes(text)
     );
   }
-
-  // Brand filter (comma-separated)
   if (brand) {
     const brands = brand.split(",").map((b) => b.trim().toLowerCase());
     results = results.filter((l) => brands.includes(l.brand.toLowerCase()));
   }
-
-  // Focal length filter (comma-separated or single)
   if (focalLength) {
     const fl = focalLength.split(",").map(Number);
-    results = results.filter((l) => fl.includes(l.focalLength));
+    results = results.filter((l) => l.focalLength && fl.includes(l.focalLength));
   }
-
-  // Max aperture filter (e.g. "1.4" shows only f/1.4 or faster)
   if (maxAperture) {
-    results = results.filter((l) => l.maxAperture <= parseFloat(maxAperture));
+    results = results.filter(
+      (l) => l.maxAperture && l.maxAperture <= parseFloat(maxAperture)
+    );
   }
-
-  // Condition filter (comma-separated)
   if (condition) {
     const conditions = condition.split(",").map((c) => c.trim().toLowerCase());
     results = results.filter((l) =>
       conditions.includes(l.condition.toLowerCase())
     );
   }
-
-  // Price range
   if (minPrice) {
     results = results.filter((l) => l.price >= parseFloat(minPrice));
   }
   if (maxPrice) {
     results = results.filter((l) => l.price <= parseFloat(maxPrice));
   }
+  return results;
+}
 
-  // Sorting
+function applySort(results, sortBy = "price_asc") {
   switch (sortBy) {
     case "price_asc":
-      results.sort((a, b) => a.price - b.price);
-      break;
+      return [...results].sort((a, b) => a.price - b.price);
     case "price_desc":
-      results.sort((a, b) => b.price - a.price);
-      break;
+      return [...results].sort((a, b) => b.price - a.price);
     case "focal_asc":
-      results.sort((a, b) => a.focalLength - b.focalLength);
-      break;
+      return [...results].sort(
+        (a, b) => (a.focalLength ?? 999) - (b.focalLength ?? 999)
+      );
     case "aperture_fast":
-      results.sort((a, b) => a.maxAperture - b.maxAperture);
-      break;
+      return [...results].sort(
+        (a, b) => (a.maxAperture ?? 99) - (b.maxAperture ?? 99)
+      );
     default:
-      break;
+      return results;
   }
+}
 
-  res.json({
-    total: results.length,
-    results,
-  });
+// ─── Static lens database endpoints ─────────────────────────────────────────
+
+// GET /api/lenses - search and filter the static seed database
+app.get("/api/lenses", (req, res) => {
+  const { sortBy = "price_asc" } = req.query;
+  let results = applyFilters([...LENSES], req.query);
+  results = applySort(results, sortBy);
+  res.json({ total: results.length, results, source: "static" });
 });
 
-// GET /api/lenses/filters - return available filter options
+// GET /api/lenses/filters - available filter options from static data
 app.get("/api/lenses/filters", (req, res) => {
   const brands = [...new Set(LENSES.map((l) => l.brand))].sort();
   const focalLengths = [...new Set(LENSES.map((l) => l.focalLength))].sort(
     (a, b) => a - b
   );
-  const conditions = [
-    "Like New",
-    "Excellent",
-    "Very Good",
-    "Good",
-    "Fair",
-  ];
+  const conditions = ["Like New", "Excellent", "Very Good", "Good", "Fair"];
   const priceRange = {
     min: Math.min(...LENSES.map((l) => l.price)),
     max: Math.max(...LENSES.map((l) => l.price)),
   };
-
   res.json({ brands, focalLengths, conditions, priceRange });
 });
 
-app.listen(PORT, () => {
+// ─── Live scrape endpoint ────────────────────────────────────────────────────
+
+// Simple in-memory cache — refreshes every 10 minutes
+const CACHE_TTL_MS = 10 * 60 * 1000;
+let scrapeCache = null;
+let cacheTimestamp = 0;
+let scrapeInProgress = false;
+
+async function refreshCache() {
+  if (scrapeInProgress) return;
+  scrapeInProgress = true;
+  try {
+    console.log("[scraper] Starting MPB scrape...");
+    const result = await scrapeMPB({ rows: 48 });
+    scrapeCache = result;
+    cacheTimestamp = Date.now();
+    console.log(`[scraper] Done — ${result.total} total, ${result.items.length} fetched`);
+  } catch (err) {
+    console.error("[scraper] Failed:", err.message);
+  } finally {
+    scrapeInProgress = false;
+  }
+}
+
+// GET /api/scrape - live listings from MPB via Playwright scraper
+app.get("/api/scrape", async (req, res) => {
+  const { sortBy = "price_asc", refresh } = req.query;
+
+  // Serve from cache if fresh, unless ?refresh=1
+  const cacheAge = Date.now() - cacheTimestamp;
+  if (scrapeCache && cacheAge < CACHE_TTL_MS && refresh !== "1") {
+    let items = applyFilters([...scrapeCache.items], req.query);
+    items = applySort(items, sortBy);
+    return res.json({
+      total: scrapeCache.total,
+      fetched: scrapeCache.items.length,
+      results: items,
+      source: "mpb-live",
+      cachedAt: new Date(cacheTimestamp).toISOString(),
+      cacheAgeSeconds: Math.round(cacheAge / 1000),
+    });
+  }
+
+  // Trigger fresh scrape (non-blocking — stream back when ready)
+  try {
+    await refreshCache();
+    if (!scrapeCache) {
+      return res
+        .status(503)
+        .json({ error: "Scrape failed — see server logs." });
+    }
+    let items = applyFilters([...scrapeCache.items], req.query);
+    items = applySort(items, sortBy);
+    return res.json({
+      total: scrapeCache.total,
+      fetched: scrapeCache.items.length,
+      results: items,
+      source: "mpb-live",
+      cachedAt: new Date(cacheTimestamp).toISOString(),
+      cacheAgeSeconds: 0,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/scrape/status - cache status
+app.get("/api/scrape/status", (req, res) => {
+  res.json({
+    cached: scrapeCache !== null,
+    inProgress: scrapeInProgress,
+    total: scrapeCache?.total ?? 0,
+    fetched: scrapeCache?.items?.length ?? 0,
+    availableBrands: scrapeCache?.availableBrands ?? [],
+    cachedAt: cacheTimestamp
+      ? new Date(cacheTimestamp).toISOString()
+      : null,
+    cacheAgeSeconds: cacheTimestamp
+      ? Math.round((Date.now() - cacheTimestamp) / 1000)
+      : null,
+  });
+});
+
+// ─── Start ───────────────────────────────────────────────────────────────────
+
+const server = app.listen(PORT, () => {
   console.log(`Leica lens search backend running on http://localhost:${PORT}`);
+});
+
+process.on("SIGTERM", async () => {
+  await closeBrowser();
+  server.close();
+});
+process.on("SIGINT", async () => {
+  await closeBrowser();
+  server.close();
+  process.exit(0);
 });
